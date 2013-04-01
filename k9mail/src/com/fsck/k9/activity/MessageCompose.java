@@ -2,7 +2,6 @@ package com.fsck.k9.activity;
 
 import java.io.File;
 import java.io.Serializable;
-import java.sql.DatabaseMetaData;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -39,10 +38,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Parcelable;
-import android.provider.ContactsContract.Contacts.Data;
 import android.provider.OpenableColumns;
 import android.text.TextWatcher;
-import android.text.format.DateFormat;
 import android.text.util.Rfc822Tokenizer;
 import android.util.Log;
 import android.util.TypedValue;
@@ -105,7 +102,6 @@ import com.fsck.k9.mail.internet.TextBody;
 import com.fsck.k9.mail.store.LocalStore;
 import com.fsck.k9.mail.store.LocalStore.LocalAttachmentBody;
 import com.fsck.k9.view.MessageWebView;
-import com.handmark.pulltorefresh.library.internal.Utils;
 import com.laps.clientemail.Recorder;
 
 public class MessageCompose extends K9Activity implements OnClickListener {
@@ -157,13 +153,14 @@ public class MessageCompose extends K9Activity implements OnClickListener {
 	private static final int CONTACT_PICKER_TO2 = 7;
 	private static final int CONTACT_PICKER_CC2 = 8;
 	private static final int CONTACT_PICKER_BCC2 = 9;
-	
 
 	private static final Account[] EMPTY_ACCOUNT_ARRAY = new Account[0];
 
-	
-	public static String ATTACHMENT_RECORD_NAME = new Date(System.currentTimeMillis()).toString();
-		
+	/*
+	 * LAPS variables
+	 */
+	Recorder mRecorder = null;
+
 	/**
 	 * Regular expression to remove the first localized "Re:" prefix in
 	 * subjects.
@@ -289,6 +286,7 @@ public class MessageCompose extends K9Activity implements OnClickListener {
 
 	private boolean mSourceProcessed = false;
 
+	// *******************
 	enum SimpleMessageFormat {
 		TEXT, HTML
 	}
@@ -2045,29 +2043,37 @@ public class MessageCompose extends K9Activity implements OnClickListener {
 		onAddAttachment2("*/*");
 	}
 
+	private void addNoteInContentMessage(){
+		this.mMessageContentView.append("\n\nEsta e-mail possui mensagens de áudio em anexo.");
+	}
+	
 	private void onAddRecordAttachment() {
 		/*
 		 * @LAPS
-		 * 
-		 * Esta função inicia o Recorder do Audio passando o Runnable a ser executado 
-		 * no momento que o usuário clica em Stop (Runnable que anexa o arquivo de áudio). 
-		 *
 		 */
-		Log.i("LAPS",this.ATTACHMENT_RECORD_NAME);
-		try {
-			new Recorder(this, new Runnable() {
+		
+		if (mRecorder == null) {
+			addNoteInContentMessage();
+			mRecorder = new Recorder(this, new Runnable() {
 				@Override
 				public void run() {
-					addAttachment(Uri.parse("file://"+Recorder.mFileName));
+					addAttachment(Uri.parse("file://"
+							+ mRecorder.mFileCompleteName));
+					deleteFile(mRecorder.mFileName + mRecorder.mFileExtention);
 				}
 			});
-
-		} catch (Exception e) {
-			Log.e(this.getClass().getName(), "Erro:" + e.getMessage());
-		} finally {
-
+		} else {
+			mRecorder.refreshFileCompleteNameByCount();
+			mRecorder.setRun(new Runnable() {
+				@Override
+				public void run() {
+					addAttachment(Uri.parse("file://"
+							+ mRecorder.mFileCompleteName));
+					deleteFile(mRecorder.mFileName + mRecorder.mFileExtention);
+				}
+			});
 		}
-
+		mRecorder.recorderStart();
 	}
 
 	/**
@@ -2096,7 +2102,7 @@ public class MessageCompose extends K9Activity implements OnClickListener {
 	private void addAttachment(Uri uri, String contentType) {
 		long size = -1;
 		String name = null;
-		Log.i("info","uri toString " +uri.toString());
+		Log.i("info", "uri toString " + uri.toString());
 		ContentResolver contentResolver = getContentResolver();
 
 		Cursor metadataCursor = contentResolver.query(uri, new String[] {
@@ -2140,6 +2146,7 @@ public class MessageCompose extends K9Activity implements OnClickListener {
 			Log.v(K9.LOG_TAG, "old attachment.size: " + size);
 		}
 		Log.v(K9.LOG_TAG, "new attachment.size: " + size);
+		
 
 		Attachment attachment = new Attachment();
 		attachment.uri = uri;
@@ -2178,7 +2185,7 @@ public class MessageCompose extends K9Activity implements OnClickListener {
 		switch (requestCode) {
 		case ACTIVITY_REQUEST_PICK_ATTACHMENT:
 			addAttachment(data.getData());
-			
+
 			mDraftNeedsSaving = true;
 			break;
 		case CONTACT_PICKER_TO:
